@@ -11,8 +11,9 @@ if [ ! -f $ENTRYPOINT_PATH ]; then
 	echo 'done... unpacking demo database'
 	gunzip $DOWNLOAD_PATH
 	echo 'done.... copying ilios demo database to by read automatically by docker'
+	echo "UPDATE application_config SET value = 0 WHERE name = 'requireSecureConnection';" >> $DATA_PATH
 	echo "USE ilios;" > $ENTRYPOINT_PATH
-	cat $DATA_PATH > $ENTRYPOINT_PATH
+	cat $DATA_PATH >> $ENTRYPOINT_PATH
 	rm $DATA_PATH
 	echo 'done'
 fi
