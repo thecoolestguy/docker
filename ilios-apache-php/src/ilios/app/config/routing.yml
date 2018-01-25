@@ -1,0 +1,33 @@
+IliosAuthenticationBundle:
+    resource: '@IliosAuthenticationBundle/Resources/config/routing.yml'
+    prefix:   /auth
+
+IliosApiBundle:
+    resource: '@IliosApiBundle/Resources/config/routing.yml'
+    prefix:   /api
+
+IliosCoreBundle:
+    resource: '@IliosCoreBundle/Resources/config/routing.yml'
+    prefix:   /api
+    
+ilios_core_uploadfile:
+    path: /upload
+    defaults:  { _controller: IliosCoreBundle:Upload:upload }
+
+ilios_core_downloadlearningmaterial:
+    path:     /lm/{token}
+    defaults:
+        _controller: IliosCoreBundle:Download:learningMaterial
+    requirements:
+        token: '^[a-zA-Z0-9]{64}$'
+
+ilios_core_downloadcurriculuminventoryreport:
+    path:     /ci-report-dl/{token}
+    defaults:
+        _controller: IliosCoreBundle:CurriculumInventoryDownload:get
+    requirements:
+        token: '^[a-zA-Z0-9]{64}$'
+
+ilios_web:
+    resource: '@IliosWebBundle/Resources/config/routing.yml'
+    prefix:   /

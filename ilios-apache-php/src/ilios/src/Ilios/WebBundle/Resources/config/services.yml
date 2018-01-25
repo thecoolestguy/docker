@@ -1,0 +1,14 @@
+services:
+    # default configuration for services in *this* file
+    _defaults:
+        autowire: true
+        autoconfigure: true
+        public: false
+
+    Ilios\WebBundle\:
+            resource: '../../*'
+
+    Ilios\WebBundle\Controller\:
+        resource: '../../Controller'
+        public: true
+        tags: ['controller.service_arguments']

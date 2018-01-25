@@ -1,0 +1,6 @@
+ilios_core_apiinfo:
+    path: /
+    defaults:
+        _controller: FrameworkBundle:Template:template
+        template:    'IliosCoreBundle::apiinfo.html.twig'
+        _format:     'html'
