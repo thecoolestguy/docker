@@ -1,12 +1,24 @@
+#ARG ILIOS_VERSION=3.41.0
 # start with the official Composer image and name it
-#FROM composer:1.5.1 AS composer
+FROM composer AS composer
+
+FROM alpine/git AS git
+
+VOLUME /tmp:/tmp
+
+WORKDIR /tmp/ilios
+RUN git clone https://git@github.com/ilios/ilios.git --branch "v3.41.0" --depth 1 /tmp/ilios
 
 FROM php:7.1.13-apache AS apache-php
 
 MAINTAINER Ilios Project Team <support@iliosproject.org>
 
+WORKDIR /var/www/ilios
+# get git
+COPY --from=git /tmp/ilios /var/www/ilios
+
 # copy the Composer PHAR from the Composer image into the apache-php image
-#COPY --from=composer /usr/bin/composer /usr/bin/composer
+COPY --from=composer /usr/bin/composer /usr/bin/composer
 
 RUN apt-get update \
     && apt-get install -y \
@@ -15,15 +27,13 @@ RUN apt-get update \
     && docker-php-ext-configure ldap --with-libdir=lib/x86_64-linux-gnu/ \
     && docker-php-ext-install ldap \
     && docker-php-ext-install zip \
+    && docker-php-ext-install pdo_mysql \
     && rm -rf /var/lib/apt/lists/* \
     && pecl channel-update pecl.php.net \
     && pecl install apcu \
     && docker-php-ext-enable apcu
 
 VOLUME /data
-
-# get via the known working method
-RUN curl -sS https://getcomposer.org/installer | php -- --install-dir=/usr/bin --filename=composer
 
 ENV COMPOSER_HOME=/tmp \
   SYMFONY_ENV=prod \
@@ -71,11 +81,9 @@ ENV COMPOSER_HOME=/tmp \
   ILIOS_TRACKING_CODE=UA-XXXXXXXX-1 \
   COMPOSER_ALLOW_SUPERUSER=1 
 
-COPY ["src/ilios", "/var/www/ilios"]
-
-# make sure we're not attempting to building with ANY caching
-RUN rm -Rf /var/www/ilios/var/cache
-RUN rm -Rf /var/www/ilios/vendor
+#ADD ["https://github.com/ilios/ilios/archive/v3.42.0.tar.gz","./ilios.tar.gz"]
+#ADD ["./ilios.tar.gz","/var/www"]
+#COPY ["src/ilios", "/var/www/ilios"]
 
 RUN mkdir -p \
     /var/www/ilios/var \
@@ -92,6 +100,7 @@ RUN sed -i'' 's%/var/www/html%/var/www/ilios/web%g' /etc/apache2/sites-enabled/0
 RUN chsh -s /bin/bash www-data
 
 USER www-data
+
 RUN /usr/bin/composer install \
   --working-dir /var/www/ilios \
   --prefer-dist \
@@ -101,10 +110,11 @@ RUN /usr/bin/composer install \
   --no-suggest \
   --classmap-authoritative
 
-RUN /var/www/ilios/bin/console ilios:maintenance:update-frontend
+RUN /var/www/ilios/bin/console ilios:maintenance:update-frontend --env=prod
 
 USER root
 RUN chsh -s /usr/sbin/nologin www-data
 
-EXPOSE 80:80
+EXPOSE 80
+CMD ["apache2-foreground"]
 
