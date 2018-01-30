@@ -1,15 +1,17 @@
-#ARG ILIOS_VERSION=3.41.0
 # start with the official Composer image and name it
 FROM composer AS composer
 
 FROM alpine/git AS git
+ARG ILIOS_VERSION_TAG=v3.41.0
 
 VOLUME /tmp:/tmp
 
-WORKDIR /tmp/ilios
-RUN git clone https://git@github.com/ilios/ilios.git --branch "v3.41.0" --depth 1 /tmp/ilios
+ENV ILIOS_VERSION_TAG=${ILIOS_VERSION_TAG}
 
-FROM php:7.1.13-apache AS apache-php
+WORKDIR /tmp/ilios
+RUN git clone https://git@github.com/ilios/ilios.git --branch $ILIOS_VERSION_TAG --depth 1 /tmp/ilios
+
+FROM php:7.1.13-apache
 
 MAINTAINER Ilios Project Team <support@iliosproject.org>
 
