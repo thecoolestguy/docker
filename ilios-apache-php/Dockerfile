@@ -1,8 +1,10 @@
-# start with the official Composer image and name it
+ARG PHP_VERSION=7.2
+# start with the official Composer image and name it 'composer' for reference
 FROM composer AS composer
 
+# then get the official Git image
 FROM alpine/git AS git
-ARG ILIOS_VERSION_TAG=v3.41.0
+ARG ILIOS_VERSION_TAG=master
 
 VOLUME /tmp:/tmp
 
@@ -11,12 +13,12 @@ ENV ILIOS_VERSION_TAG=${ILIOS_VERSION_TAG}
 WORKDIR /tmp/ilios
 RUN git clone https://git@github.com/ilios/ilios.git --branch $ILIOS_VERSION_TAG --depth 1 /tmp/ilios
 
-FROM php:7.1.13-apache
+FROM php:$PHP_VERSION-apache
 
 MAINTAINER Ilios Project Team <support@iliosproject.org>
 
 WORKDIR /var/www/ilios
-# get git
+# get the code we just cloned from git
 COPY --from=git /tmp/ilios /var/www/ilios
 
 # copy the Composer PHAR from the Composer image into the apache-php image
