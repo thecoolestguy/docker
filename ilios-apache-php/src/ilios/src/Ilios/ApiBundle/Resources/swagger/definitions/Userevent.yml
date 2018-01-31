@@ -1,4 +1,0 @@
-Userevent:
- type: object
- allOf:
-   - $ref: '#/definitions/CalendarEvent'

@@ -1,22 +1,38 @@
-ARG PHP_VERSION=7.2
-# start with the official Composer image and name it 'composer' for reference
+# This is the official Ilios ilios-php-apache Dockerfile which will build out an Ilios application server running on
+# Apache httpd 2.4.x and PHP. It relies upon Docker images from the official PHP repository at Docker Hub at
+# and will install the latest versions of PHP and Ilios by default. These versions can be overridden at build time by
+# specifying the respective versions as argument on the command line, like so:
+#
+# docker build --build-arg "PHP_VERSION=7.1.13-apache" --build-arg "ILIOS_VERSION_TAG=v3.42.0" -t ilios-apache-php .
+
+# Initialize the arguments with a default value. These may be overridden at build time as shown in the example above.
+ARG PHP_VERSION=apache
+
+# Begin with the official Composer image and name it 'composer' for reference
 FROM composer AS composer
 
-# then get the official Git image
+# then get the official Git image to checkout the code
 FROM alpine/git AS git
 ARG ILIOS_VERSION_TAG=master
 
+# map the /tmp volume to store the Ilios source files for copying
 VOLUME /tmp:/tmp
 
+# set the ilios version tag from the CLI or default arguments
 ENV ILIOS_VERSION_TAG=${ILIOS_VERSION_TAG}
 
+# create the 'ilios' directory in /tmp and checkout the Ilios code without git history
 WORKDIR /tmp/ilios
 RUN git clone https://git@github.com/ilios/ilios.git --branch $ILIOS_VERSION_TAG --depth 1 /tmp/ilios
 
-FROM php:$PHP_VERSION-apache
+#ARG ILIOS_APP_FQDN=localhost
+# get the proper 'PHP' image from the official PHP repo at
+FROM php:$PHP_VERSION
 
+# Now that all the 'FROM' values are set, set the maintainer
 MAINTAINER Ilios Project Team <support@iliosproject.org>
 
+# create the application root for the final container image
 WORKDIR /var/www/ilios
 # get the code we just cloned from git
 COPY --from=git /tmp/ilios /var/www/ilios
@@ -24,6 +40,8 @@ COPY --from=git /tmp/ilios /var/www/ilios
 # copy the Composer PHAR from the Composer image into the apache-php image
 COPY --from=composer /usr/bin/composer /usr/bin/composer
 
+# get/install all the PHP extensions required for Ilios and delete the source
+# files after install
 RUN apt-get update \
     && apt-get install -y \
     && apt-get install libldap2-dev -y \
@@ -32,13 +50,31 @@ RUN apt-get update \
     && docker-php-ext-install ldap \
     && docker-php-ext-install zip \
     && docker-php-ext-install pdo_mysql \
+    && mv /etc/apache2/mods-available/socache_shmcb.load /etc/apache2/mods-enabled/ \
+    && mv /etc/apache2/mods-available/ssl.conf /etc/apache2/mods-enabled/ \
+    && mv /etc/apache2/mods-available/ssl.load /etc/apache2/mods-enabled/ \
     && rm -rf /var/lib/apt/lists/* \
     && pecl channel-update pecl.php.net \
     && pecl install apcu \
-    && docker-php-ext-enable apcu
+    && docker-php-ext-enable apcu \
+    && cp /etc/apache2/sites-available/default-ssl.conf /etc/apache2/sites-enabled/ilios-ssl.conf \
+    && mv /etc/apache2/sites-enabled/000-default.conf /etc/apache2/sites-enabled/ilios.conf
 
+# update the DocumentRoot to point to the '/var/www/ilios/web' directory
+RUN sed -i -e 's|/var/www/html|/var/www/ilios/web|g' /etc/apache2/sites-enabled/ilios.conf /etc/apache2/sites-enabled/ilios-ssl.conf
+RUN sed -i -e 's|ssl-cert-snakeoil|localhost|g' /etc/apache2/sites-enabled/ilios-ssl.conf
+
+# set the ilios version tag from the CLI or default arguments
+#ENV ILIOS_APP_FQDN=${ILIOS_APP_FQDN}
+
+# create a self-signed certificate
+RUN openssl req -subj "/CN=localhost" -new -newkey rsa:2048 -days 365 -nodes -x509 \
+    -keyout /etc/ssl/private/localhost.key -out /etc/ssl/certs/localhost.pem
+
+# create the volume that will store the learning materials
 VOLUME /data
 
+# set all of the necessary environment variables
 ENV COMPOSER_HOME=/tmp \
   SYMFONY_ENV=prod \
   ILIOS_API_ENVIRONMENT=prod \
@@ -74,7 +110,7 @@ ENV COMPOSER_HOME=/tmp \
   ILIOS_SHIBBOLETH_AUTHENTICATION_LOGOUT_PATH=null \
   ILIOS_SHIBBOLETH_AUTHENTICATION_USER_ID_ATTRIBUTE=null \
   ILIOS_TIMEZONE='America/Los_Angeles' \
-  ILIOS_REQUIRE_SECURE_CONNECTION=false \
+  ILIOS_REQUIRE_SECURE_CONNECTION=true \
   ILIOS_KEEP_FRONTEND_UPDATED=true \
   ILIOS_FRONTEND_RELEASE_VERSION=null \
   ILIOS_CAS_AUTHENTICATION_SERVER=null \
@@ -82,13 +118,9 @@ ENV COMPOSER_HOME=/tmp \
   ILIOS_CAS_AUTHENTICATION_VERIFY_SSL=true \
   ILIOS_CAS_AUTHENTICATION_CERTIFICATE_PATH=null \
   ILIOS_ENABLE_TRACKING=false \
-  ILIOS_TRACKING_CODE=UA-XXXXXXXX-1 \
-  COMPOSER_ALLOW_SUPERUSER=1 
+  ILIOS_TRACKING_CODE=UA-XXXXXXXX-1
 
-#ADD ["https://github.com/ilios/ilios/archive/v3.42.0.tar.gz","./ilios.tar.gz"]
-#ADD ["./ilios.tar.gz","/var/www"]
-#COPY ["src/ilios", "/var/www/ilios"]
-
+# add all the extra directories necessary for the application
 RUN mkdir -p \
     /var/www/ilios/var \
     /var/www/ilios/var/cache \
@@ -97,14 +129,16 @@ RUN mkdir -p \
     /var/www/ilios/var/tmp \
     /var/www/ilios/vendor
 
+# recursively change user/group ownership of the app root to 'www-data'
 RUN chown -R www-data:www-data /var/www/ilios
 
-RUN sed -i'' 's%/var/www/html%/var/www/ilios/web%g' /etc/apache2/sites-enabled/000-default.conf
-
+# give the www-data user a temporary shell in order to build the Ilios app
 RUN chsh -s /bin/bash www-data
 
+# change to the context of the 'www-data' user
 USER www-data
 
+# as the 'www-data' user, build the app using composer and then remove it
 RUN /usr/bin/composer install \
   --working-dir /var/www/ilios \
   --prefer-dist \
@@ -114,11 +148,18 @@ RUN /usr/bin/composer install \
   --no-suggest \
   --classmap-authoritative
 
+# update the frontend
 RUN /var/www/ilios/bin/console ilios:maintenance:update-frontend --env=prod
 
+# switch back to the root user to finish up
 USER root
+
+# revert the 'www-data' user's shell to its default
 RUN chsh -s /usr/sbin/nologin www-data
 
-EXPOSE 80
-CMD ["apache2-foreground"]
+# note that this app will expose data on port 80
+EXPOSE 80:80
+EXPOSE 443:443
 
+# launch apache httpd as a foreground service
+CMD ["apache2-foreground"]
