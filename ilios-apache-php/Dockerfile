@@ -3,10 +3,10 @@
 # and will install the latest versions of PHP and Ilios by default. These versions can be overridden at build time by
 # specifying the respective versions as argument on the command line, like so:
 #
-# docker build --build-arg "PHP_VERSION=7.1.13-apache" --build-arg "ILIOS_VERSION_TAG=v3.42.0" -t ilios-apache-php .
+# docker build --build-arg "PHP_DOCKER_IMAGE=7.1.13-apache" --build-arg "ILIOS_VERSION_TAG=v3.42.0" -t ilios-apache-php .
 
 # Initialize the arguments with a default value. These may be overridden at build time as shown in the example above.
-ARG PHP_VERSION=apache
+ARG PHP_DOCKER_IMAGE=apache
 
 # Begin with the official Composer image and name it 'composer' for reference
 FROM composer AS composer
@@ -25,9 +25,12 @@ ENV ILIOS_VERSION_TAG=${ILIOS_VERSION_TAG}
 WORKDIR /tmp/ilios
 RUN git clone https://git@github.com/ilios/ilios.git --branch $ILIOS_VERSION_TAG --depth 1 /tmp/ilios
 
-#ARG ILIOS_APP_FQDN=localhost
 # get the proper 'PHP' image from the official PHP repo at
-FROM php:$PHP_VERSION
+FROM php:$PHP_DOCKER_IMAGE
+ARG ILIOS_APP_FQDN=localhost
+
+# set the fqdn of the ilios hostname for use in SSL self-signed cert-creation and where needed
+ENV ILIOS_APP_FQDN=${ILIOS_APP_FQDN}
 
 # Now that all the 'FROM' values are set, set the maintainer
 MAINTAINER Ilios Project Team <support@iliosproject.org>
@@ -53,23 +56,22 @@ RUN apt-get update \
     && mv /etc/apache2/mods-available/socache_shmcb.load /etc/apache2/mods-enabled/ \
     && mv /etc/apache2/mods-available/ssl.conf /etc/apache2/mods-enabled/ \
     && mv /etc/apache2/mods-available/ssl.load /etc/apache2/mods-enabled/ \
+    && mv /etc/apache2/mods-available/rewrite.load /etc/apache2/mods-enabled/ \
     && rm -rf /var/lib/apt/lists/* \
     && pecl channel-update pecl.php.net \
     && pecl install apcu \
     && docker-php-ext-enable apcu \
     && cp /etc/apache2/sites-available/default-ssl.conf /etc/apache2/sites-enabled/ilios-ssl.conf \
-    && mv /etc/apache2/sites-enabled/000-default.conf /etc/apache2/sites-enabled/ilios.conf
-
-# update the DocumentRoot to point to the '/var/www/ilios/web' directory
-RUN sed -i -e 's|/var/www/html|/var/www/ilios/web|g' /etc/apache2/sites-enabled/ilios.conf /etc/apache2/sites-enabled/ilios-ssl.conf
-RUN sed -i -e 's|ssl-cert-snakeoil|localhost|g' /etc/apache2/sites-enabled/ilios-ssl.conf
-
-# set the ilios version tag from the CLI or default arguments
-#ENV ILIOS_APP_FQDN=${ILIOS_APP_FQDN}
-
-# create a self-signed certificate
-RUN openssl req -subj "/CN=localhost" -new -newkey rsa:2048 -days 365 -nodes -x509 \
-    -keyout /etc/ssl/private/localhost.key -out /etc/ssl/certs/localhost.pem
+    && mv /etc/apache2/sites-enabled/000-default.conf /etc/apache2/sites-enabled/ilios.conf \
+    && mv /etc/apache2/conf-available/docker-php.conf /etc/apache2/conf-enabled/ \
+    # create a self-signed certificate
+    && openssl req -subj "/CN=$ILIOS_APP_FQDN" -new -newkey rsa:2048 -days 365 -nodes -x509 \
+        -keyout /etc/ssl/private/localhost.key -out /etc/ssl/certs/localhost.pem \
+    # allow httpd overrides in the /var/www/ilios/web directory
+    && sed -i -e 's|/var/www|/var/www/ilios/web|g' /etc/apache2/conf-enabled/docker-php.conf \
+    # update the DocumentRoot to point to the '/var/www/ilios/web' directory for http AND https
+    && sed -i -e 's|/var/www/html|/var/www/ilios/web|g' /etc/apache2/sites-enabled/ilios.conf /etc/apache2/sites-enabled/ilios-ssl.conf \
+    && sed -i -e 's|ssl-cert-snakeoil|localhost|g' /etc/apache2/sites-enabled/ilios-ssl.conf
 
 # create the volume that will store the learning materials
 VOLUME /data
@@ -158,8 +160,8 @@ USER root
 RUN chsh -s /usr/sbin/nologin www-data
 
 # note that this app will expose data on port 80
-EXPOSE 80:80
-EXPOSE 443:443
+EXPOSE 80
+EXPOSE 443
 
 # launch apache httpd as a foreground service
 CMD ["apache2-foreground"]
