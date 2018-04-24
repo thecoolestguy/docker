@@ -23,11 +23,11 @@ FROM composer AS composer
 FROM php:7.2-apache-stretch
 
 # set the default values for mpm_prefork apache settings, overrideable through build arguments
-ARG MPM_STARTSERVERS=4
-ARG MPM_MINSPARESERVERS=20
-ARG MPM_MAXSPARESERVERS=40
-ARG MPM_MAXREQUESTWORKERS=200
-ARG MPM_MAXCONNECTIONSPERCHILD=4500
+ARG MPM_STARTSERVERS=5
+ARG MPM_MINSPARESERVERS=5
+ARG MPM_MAXSPARESERVERS=10
+ARG MPM_MAXREQUESTWORKERS=150
+ARG MPM_MAXCONNECTIONSPERCHILD=0
 
 # copy the Composer PHAR from the Composer image into the apache-php image
 COPY --from=composer /usr/bin/composer /usr/bin/composer
@@ -79,6 +79,10 @@ ILIOS_CAS_AUTHENTICATION_VERIFY_SSL=false \
 ILIOS_CAS_AUTHENTICATION_CERTIFICATE_PATH=null \
 ILIOS_ENABLE_TRACKING=false \
 ILIOS_TRACKING_CODE=UA-XXXXXXXX-1 \
+# Set the options for the frontend
+ILIOS_FRONTEND_STACK=production \
+# if $ILIOS_FRONTEND_STACK == 'staging', set the staging build hash here
+ILIOS_FRONTEND_STAGING_BUILD=xxxxxxx \
 MPM_STARTSERVERS=${MPM_STARTSERVERS} \
 MPM_MINSPARESERVERS=${MPM_MINSPARESERVERS} \
 MPM_MAXSPARESERVERS=${MPM_MAXSPARESERVERS} \
@@ -101,7 +105,7 @@ RUN \
     && mv /etc/apache2/mods-available/socache_shmcb.load /etc/apache2/mods-enabled/ \
     # set up the mpm prefork module
     && mv /etc/apache2/mods-available/mpm_prefork.* /etc/apache2/mods-enabled/ \
-    && sed -i -e 's|StartServers\s.*[0-9].*$|StartServers\t\t'"$MPM_STARTSERVERS"'|g' /etc/apache2/mods-enabled/mpm_prefork.conf \
+    && sed -i -e 's|StartServers\s.*[0-9].*$|StartServers\t\t'"$MPM_STARTSERVERS"'|g' \/etc/apache2/mods-enabled/mpm_prefork.conf \
     && sed -i -e 's|MinSpareServers\s.*[0-9].*$|MinSpareServers\t\t'"$MPM_MINSPARESERVERS"'|g' /etc/apache2/mods-enabled/mpm_prefork.conf \
     && sed -i -e 's|MaxSpareServers\s.*[0-9].*$|MaxSpareServers\t\t'"$MPM_MAXSPARESERVERS"'|g' /etc/apache2/mods-enabled/mpm_prefork.conf \
     && sed -i -e 's|MaxRequestWorkers\s.*[0-9].*$|MaxRequestWorkers\t'"$MPM_MAXREQUESTWORKERS"'|g' /etc/apache2/mods-enabled/mpm_prefork.conf \
@@ -190,6 +194,9 @@ RUN \
     && /usr/bin/composer clear-cache \
     && /var/www/ilios/bin/console cache:clear --env=prod \
     && /var/www/ilios/bin/console cache:warmup --env=prod
+    # for migrations and updates, we need to adjust these, run them as a CMD later, or take different approach...
+    #&& /var/www/ilios/bin/console doctrine:migrations:migrate -n --env=prod \
+    #&& if [ "$ILIOS_FRONTEND_STACK" = "staging" ] ; then /var/www/ilios/bin/console --staging-build --at-version=$ILIOS_FRONTEND_STAGING_BUILD --env=prod; else /var/www/ilios/bin/console ilios:maintenance:update-frontend --env=prod; fi \
 
 # switch back to the root user to finish up
 USER root
